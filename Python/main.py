@@ -1,33 +1,26 @@
-import predicted_model as pm
-import data_load as dl
-import torch
-from torch import nn
-from torch import optim
-
 if __name__ == '__main__':
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # to use gpu
-    train_dataset, test_dataset = dl.data_load('data_aggregated_without_zeros.xlsx',
-                                               5).data_prepare()  # data split into train set and test set
-    model = pm.predicted_model(input_size=4, hidden_size1=256, hidden_size2=1024, hidden_size3=32).to(device)  # set the model size
-    criterion = nn.MSELoss()  # loss function set as MSE
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-3)  # with weight_decay to care about regularization and avoid overfitting
-    for epoch in range(100):  # training the whole dataset 100 times
-        for batch_idx, (batch_x, batch_y) in enumerate(train_dataset):
-            batch_x = batch_x.to(device=device)
-            batch_y = batch_y.to(device=device)
-            scores = model(batch_x)  # feed the model
-            loss = criterion(scores, batch_y)
-            if loss < 18000.0:
-                print(loss)
-            optimizer.zero_grad()
-            loss.backward()  # backpropagation
-            optimizer.step()
+    import numpy as np
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+    from sklearn.neural_network import MLPRegressor
 
-    # test on the test set and calculate the MSE error
-    error = 0.0
-    for test_x, test_y in test_dataset:
-        test_x = test_x.to(device=device)
-        predict = model(test_x)
-        error += (test_y - predict) ** 2
-    error /= 40
-    print("the MSE on the test set is %10.4f" % error)
+
+    def normalization(array):
+        array = 2. * (array - np.min(array)) / np.ptp(array) - 1
+        return array
+
+
+    rawdata = pd.read_excel('data_aggregated_without_zeros.xlsx', engine='openpyxl').iloc[:, :5]  # load the excel file
+    nplist = rawdata.T.to_numpy()
+    data = nplist.T
+    data[:, 1:4] = np.log(data[:, 1:4])  # since the range of the last 2 columns is too large, take the log of them
+    data[:, 0] = normalization(data[:, 0])  # do the normalization since the range become too small
+    data[:, 1] = normalization(data[:, 1])
+    data[:, 2] = normalization(data[:, 2])
+    data[:, 3] = normalization(data[:, 3])
+
+    X_train, X_test, y_train, y_test = train_test_split(data[:, :4], data[:, 4], test_size=40, random_state=42)
+
+    reg = MLPRegressor(random_state=1, hidden_layer_sizes=(256, 256), max_iter=10000)
+    reg.fit(X_train, y_train)
+    print(np.mean((reg.predict(X_test) - y_test) ** 2))
